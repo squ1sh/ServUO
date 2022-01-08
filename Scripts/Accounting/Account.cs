@@ -921,27 +921,15 @@ namespace Server.Accounting
         public static Mobile[] LoadMobiles(XmlElement node)
         {
             Mobile[] list = new Mobile[7];
-            XmlElement chars = node["chars"];
+			var characters = LoadCharacterRecords(node).FindAll(c => string.IsNullOrWhiteSpace(c.ServerName) || c.ServerName == ServerList.ServerName);
 
-            //int length = Accounts.GetInt32( Accounts.GetAttribute( chars, "length", "6" ), 6 );
-            //list = new Mobile[length];
-            //Above is legacy, no longer used
-
-            if (chars == null)
-            {
-                return list;
-            }
-
-            foreach (XmlElement ele in chars.GetElementsByTagName("char"))
+            foreach (var character in characters)
             {
                 try
                 {
-                    int index = Utility.GetXMLInt32(Utility.GetAttribute(ele, "index", "0"), 0);
-                    int serial = Utility.GetXMLInt32(Utility.GetText(ele, "0"), 0);
-
-                    if (index >= 0 && index < list.Length)
+                    if (character.Index >= 0 && character.Index < list.Length)
                     {
-                        list[index] = World.FindMobile(serial);
+                        list[character.Index] = World.FindMobile(character.CharacterId);
                     }
                 }
                 catch (Exception e)
@@ -953,12 +941,51 @@ namespace Server.Accounting
             return list;
         }
 
-        /// <summary>
-        ///     Deserializes a list of AccountComment instances from an xml element.
-        /// </summary>
-        /// <param name="node">The XmlElement from which to deserialize.</param>
-        /// <returns>Comment list. Value will never be null.</returns>
-        public static List<AccountComment> LoadComments(XmlElement node)
+		/// <summary>
+		///     Deserializes a list of Mobile instances from an xml element.
+		/// </summary>
+		/// <param name="node">The XmlElement instance from which to deserialize.</param>
+		/// <returns>Mobile list. Value will never be null.</returns>
+		public static List<CharacterRecord> LoadCharacterRecords(XmlElement node)
+		{
+			var characters = new List<CharacterRecord>();
+
+			XmlElement chars = node["chars"];
+
+			//int length = Accounts.GetInt32( Accounts.GetAttribute( chars, "length", "6" ), 6 );
+			//list = new Mobile[length];
+			//Above is legacy, no longer used
+
+			if (chars == null)
+			{
+				return characters;
+			}
+
+			foreach (XmlElement ele in chars.GetElementsByTagName("char"))
+			{
+				try
+				{
+					int index = Utility.GetXMLInt32(Utility.GetAttribute(ele, "index", "0"), 0);
+					var serverName = Utility.GetAttribute(ele, "server", "");
+					int serial = Utility.GetXMLInt32(Utility.GetText(ele, "0"), 0);
+
+					characters.Add(new CharacterRecord { Index = index, CharacterId = serial, ServerName = serverName });
+				}
+				catch (Exception e)
+				{
+					Diagnostics.ExceptionLogging.LogException(e);
+				}
+			}
+
+			return characters;
+		}
+
+		/// <summary>
+		///     Deserializes a list of AccountComment instances from an xml element.
+		/// </summary>
+		/// <param name="node">The XmlElement from which to deserialize.</param>
+		/// <returns>Comment list. Value will never be null.</returns>
+		public static List<AccountComment> LoadComments(XmlElement node)
         {
             XmlElement comments = node["comments"];
 
@@ -1323,7 +1350,7 @@ namespace Server.Accounting
         ///     Serializes this Account instance to an XmlTextWriter.
         /// </summary>
         /// <param name="xml">The XmlTextWriter instance from which to serialize.</param>
-        public void Save(XmlTextWriter xml)
+        public void Save(XmlTextWriter xml, List<CharacterRecord> characterRecords)
         {
             xml.WriteStartElement("account");
 
@@ -1395,10 +1422,20 @@ namespace Server.Accounting
                 {
                     xml.WriteStartElement("char");
                     xml.WriteAttributeString("index", i.ToString());
-                    xml.WriteString(m.Serial.Value.ToString());
-                    xml.WriteEndElement();
+					xml.WriteAttributeString("server", ServerList.ServerName);
+					xml.WriteString(m.Serial.Value.ToString());
+					xml.WriteEndElement();
                 }
             }
+
+			foreach(var character in characterRecords.FindAll(cr => !string.IsNullOrWhiteSpace(cr.ServerName) && ServerList.ServerName != cr.ServerName))
+			{
+				xml.WriteStartElement("char");
+				xml.WriteAttributeString("index", character.Index.ToString());
+				xml.WriteAttributeString("server", ServerList.ServerName);
+				xml.WriteString(character.CharacterId.ToString());
+				xml.WriteEndElement();
+			}
 
             xml.WriteEndElement();
 

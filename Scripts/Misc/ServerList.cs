@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
+using Server.Assets;
 #endregion
 
 namespace Server.Misc
@@ -45,11 +46,13 @@ namespace Server.Misc
 
         public static string ServerName = Config.Get("Server.Name", "My Shard");
 
+		public static readonly AdditionalServers AdditionalServers = Config.Get("Server.AdditionalServers", "").TryParseAsJson<AdditionalServers>(out var servers) ? servers : new AdditionalServers();
+
         private static IPAddress _PublicAddress;
 
         private static readonly Regex _AddressPattern = new Regex(@"([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})");
 
-        public static void Initialize()
+		public static void Initialize()
         {
             if (Address == null)
             {
@@ -89,6 +92,16 @@ namespace Server.Misc
                 }
 
                 e.AddServer(ServerName, new IPEndPoint(localAddress, localPort));
+
+				foreach(var server in AdditionalServers.ServerList)
+				{
+					Resolve(server.Address, out var ipAddress);
+
+					if(!string.IsNullOrWhiteSpace(server.ServerName) && ipAddress != null)
+					{
+						e.AddServer(server.ServerName, new IPEndPoint(ipAddress, server.Port));
+					}					
+				}
             }
             catch
             {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Xml;
 
 namespace Server.Accounting
@@ -8,8 +9,10 @@ namespace Server.Accounting
     public class Accounts
     {
         private static Dictionary<string, IAccount> m_Accounts = new Dictionary<string, IAccount>();
+		private static readonly string AccountDirectory = Config.Get("Server.AccountPath", "Saves/Accounts");
 
-        public static void Configure()
+
+		public static void Configure()
         {
             EventSink.WorldLoad += Load;
             EventSink.WorldSave += Save;
@@ -49,59 +52,115 @@ namespace Server.Accounting
         {
             m_Accounts = new Dictionary<string, IAccount>(32, StringComparer.OrdinalIgnoreCase);
 
-            string filePath = Path.Combine("Saves/Accounts", "accounts.xml");
+			var accounts = GetAccountNode();
 
-            if (!File.Exists(filePath))
-                return;
-
-            XmlDocument doc = new XmlDocument();
-            doc.Load(filePath);
-
-            XmlElement root = doc["accounts"];
-
-            foreach (XmlElement account in root.GetElementsByTagName("account"))
-            {
-                try
-                {
-                    Account acct = new Account(account);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine("Warning: Account instance load failed");
-                    Diagnostics.ExceptionLogging.LogException(e);
-                }
-            }
+			if (accounts != null)
+			{
+				foreach (XmlElement account in accounts)
+				{
+					try
+					{
+						Account acct = new Account(account);
+					}
+					catch (Exception e)
+					{
+						Console.WriteLine("Warning: Account instance load failed");
+						Diagnostics.ExceptionLogging.LogException(e);
+					}
+				}
+			}			
         }
 
-        public static void Save(WorldSaveEventArgs e)
+		public static List<AccountRecord> LoadAccountRecords()
+		{
+			var accountRecords = new List<AccountRecord>();
+
+			var accounts = GetAccountNode();
+
+			if (accounts != null)
+			{
+				foreach (XmlElement account in accounts)
+				{
+					try
+					{
+						var username = Utility.GetText(account["username"], "empty");
+						var characters = Account.LoadCharacterRecords(account);
+
+						if (!string.IsNullOrWhiteSpace(username))
+						{
+							accountRecords.Add(new AccountRecord { Username = username, Characters = characters });
+						}
+					}
+					catch (Exception e)
+					{
+						Console.WriteLine("Warning: Account instance load failed");
+						Diagnostics.ExceptionLogging.LogException(e);
+					}
+				}				
+			}
+
+			return accountRecords;
+		}
+
+		private static XmlNodeList GetAccountNode()
+		{
+			string filePath = Path.Combine(AccountDirectory, "accounts.xml");
+
+			if (!File.Exists(filePath))
+				return null;
+
+			XmlDocument doc = new XmlDocument();
+			doc.Load(filePath);
+
+			XmlElement root = doc["accounts"];
+
+			return root.GetElementsByTagName("account");
+		}
+
+		public static void Save(WorldSaveEventArgs e)
         {
-            if (!Directory.Exists("Saves/Accounts"))
-                Directory.CreateDirectory("Saves/Accounts");
+			try
+			{
+				var accountRecords = LoadAccountRecords();
 
-            string filePath = Path.Combine("Saves/Accounts", "accounts.xml");
+				if (!Directory.Exists(AccountDirectory))
+					Directory.CreateDirectory(AccountDirectory);
 
-            using (StreamWriter op = new StreamWriter(filePath))
-            {
-                XmlTextWriter xml = new XmlTextWriter(op)
-                {
-                    Formatting = Formatting.Indented,
-                    IndentChar = '\t',
-                    Indentation = 1
-                };
+				string filePath = Path.Combine(AccountDirectory, "accounts.xml");
 
-                xml.WriteStartDocument(true);
+				using (StreamWriter op = new StreamWriter(filePath))
+				{
+					XmlTextWriter xml = new XmlTextWriter(op)
+					{
+						Formatting = Formatting.Indented,
+						IndentChar = '\t',
+						Indentation = 1
+					};
 
-                xml.WriteStartElement("accounts");
+					xml.WriteStartDocument(true);
 
-                xml.WriteAttributeString("count", m_Accounts.Count.ToString());
+					xml.WriteStartElement("accounts");
 
-                foreach (Account a in GetAccounts())
-                    a.Save(xml);
+					xml.WriteAttributeString("count", m_Accounts.Count.ToString());
 
-                xml.WriteEndElement();
+					foreach (Account a in GetAccounts())
+					{
+						var characters = accountRecords.FirstOrDefault(account => a.Username.Equals(account.Username, StringComparison.InvariantCultureIgnoreCase))
+							?.Characters ?? new List<CharacterRecord>();
 
-                xml.Close();
-            }
+						a.Save(xml, characters);
+					}
+
+					xml.WriteEndElement();
+
+					xml.Close();
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine("Warning: Account file failed to save.");
+				Diagnostics.ExceptionLogging.LogException(ex);
+			}			
         }
     }
 }
