@@ -1432,7 +1432,7 @@ namespace Server.Accounting
 			{
 				xml.WriteStartElement("char");
 				xml.WriteAttributeString("index", character.Index.ToString());
-				xml.WriteAttributeString("server", ServerList.ServerName);
+				xml.WriteAttributeString("server", character.ServerName);
 				xml.WriteString(character.CharacterId.ToString());
 				xml.WriteEndElement();
 			}
