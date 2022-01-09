@@ -42,7 +42,7 @@ namespace Server.Misc
 
         public static readonly string Address = Config.Get("Server.Address", default(string));
 
-        public static readonly bool AutoDetect = Config.Get("Server.AutoDetect", true);
+		public static readonly bool AutoDetect = Config.Get("Server.AutoDetect", true);
 
         public static string ServerName = Config.Get("Server.Name", "My Shard");
 
@@ -64,9 +64,11 @@ namespace Server.Misc
             else
             {
                 Resolve(Address, out _PublicAddress);
-            }
+			}
 
-            EventSink.ServerList += EventSink_ServerList;
+			Core.ServerName = ServerName;
+
+			EventSink.ServerList += EventSink_ServerList;
         }
 
         private static void EventSink_ServerList(ServerListEventArgs e)
@@ -127,7 +129,7 @@ namespace Server.Misc
                 if (_PublicAddress != null)
                 {
                     Console.WriteLine("ServerList: Done: '{0}'", _PublicAddress);
-                }
+				}
                 else
                 {
                     _PublicAddress = IPAddress.Any;

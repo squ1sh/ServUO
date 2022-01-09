@@ -3943,6 +3943,21 @@ namespace Server.Network
 		}
 	}
 
+	public sealed class GenerateAuthIDForPlayServerAck : Packet
+	{
+		public GenerateAuthIDForPlayServerAck(string serverName, IPAddress ipAddress, int port)
+			: base(0xAB)
+		{
+			var address = ipAddress.ToString();
+
+			m_Stream.Write(serverName.Length);
+			m_Stream.WriteLittleUniFixed(serverName, serverName.Length);
+			m_Stream.Write(address.Length);
+			m_Stream.WriteLittleUniFixed(address, address.Length);
+			m_Stream.Write(port);
+		}
+	}
+
 	[Flags]
 	public enum PacketState
 	{

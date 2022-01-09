@@ -2,7 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using Server.ContextMenus;
 using Server.Diagnostics;
 using Server.Gumps;
@@ -96,6 +98,7 @@ namespace Server.Network
 			Register(0x9D, 51, true, GMSingle);
 			Register(0x9F, 0, true, VendorSellReply);
 			Register(0xA0, 3, false, PlayServer);
+			Register(0xAB, 0, false, GenerateAuthIDForPlayServer);
 			Register(0xA4, 149, false, SystemInfo);
 			Register(0xA7, 4, true, RequestScrollWindow);
 			Register(0xAD, 0, true, UnicodeSpeech);
@@ -2769,7 +2772,7 @@ namespace Server.Network
 		private static readonly Dictionary<uint, AuthIDPersistence> m_AuthIDWindow =
 			new Dictionary<uint, AuthIDPersistence>(m_AuthIDWindowSize);
 
-		private static uint GenerateAuthID(NetState state)
+		private static uint GenerateAuthID(ClientVersion clientVersion)
 		{
 			if (m_AuthIDWindow.Count == m_AuthIDWindowSize)
 			{
@@ -2801,7 +2804,7 @@ namespace Server.Network
 			}
 			while (m_AuthIDWindow.ContainsKey(authID));
 
-			m_AuthIDWindow[authID] = new AuthIDPersistence(state.Version);
+			m_AuthIDWindow[authID] = new AuthIDPersistence(clientVersion);
 
 			return authID;
 		}
@@ -2894,7 +2897,7 @@ namespace Server.Network
 
 		public static void PlayServer(NetState state, PacketReader pvSrc)
 		{
-			int index = pvSrc.ReadInt16();
+			short index = pvSrc.ReadInt16();
 			var info = state.ServerInfo;
 			var a = state.Account;
 
@@ -2908,10 +2911,65 @@ namespace Server.Network
 			}
 			else
 			{
-				state.AuthID = GenerateAuthID(state);
+				var serverInfo = info[index];
 
-				state.SentFirstPacket = false;
-				state.Send(new PlayServerAck(info[index], state.AuthID));
+				if(serverInfo.Name == Core.ServerName)
+				{
+					state.AuthID = GenerateAuthID(state.Version);
+
+					state.SentFirstPacket = false;
+					state.Send(new PlayServerAck(info[index], state.AuthID));
+				}
+				else
+				{
+					var serverDetails = info.FirstOrDefault(sd => sd.Name == serverInfo.Name);
+
+					if (serverDetails != null)
+					{
+						var socket = GetSocket(serverDetails.Address.Address, serverDetails.Address.Port);
+
+						var netState = new NetState(socket, Core.MessagePump);
+
+						netState.Version = state.Version;
+
+						var endpoint = (IPEndPoint)state.Socket.RemoteEndPoint;
+
+						netState.Send(new GenerateAuthIDForPlayServerAck(serverInfo.Name, endpoint.Address, endpoint.Port));
+					}					
+				}
+			}
+		}
+
+		public static void GenerateAuthIDForPlayServer(NetState state, PacketReader pvSrc)
+		{
+			int lengthOfName = pvSrc.ReadInt32();
+			string serverName = pvSrc.ReadUnicodeStringLESafe(lengthOfName);
+			int lengthOfAddress = pvSrc.ReadInt32();
+			string address = pvSrc.ReadUnicodeStringLESafe(lengthOfAddress);
+			int port = pvSrc.ReadInt32();
+
+			var a = state.Account;
+
+			var info = state.ServerInfo.FirstOrDefault(si => si.Name == serverName);
+
+			if (a == null || info == null || !IPAddress.TryParse(address, out var ipAddress))
+			{
+				Utility.PushColor(ConsoleColor.Red);
+				Console.WriteLine("Client: {0}: Invalid Server ({1}|{2})", state, address, serverName);
+				Utility.PopColor();
+
+				state.Dispose();
+			}
+			else
+			{
+				var socket = GetSocket(ipAddress, port);
+
+				var netState = new NetState(socket, Core.MessagePump);
+
+				netState.AuthID = GenerateAuthID(state.Version);
+
+				netState.SentFirstPacket = false;
+				netState.Send(new PlayServerAck(info, state.AuthID));
 			}
 		}
 
@@ -3218,6 +3276,56 @@ namespace Server.Network
 			if (serial.IsItem)
 			{
 				EventSink.InvokeTargetByResourceMacro(new TargetByResourceMacroEventArgs(ns.Mobile, World.FindItem(serial), resourcetype));
+			}
+		}
+
+		public static Socket GetSocket(IPAddress address, int port)
+		{
+			IPEndPoint ipep = new IPEndPoint(address, port);
+			var s = new Socket(ipep.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+			try
+			{
+				s.LingerState.Enabled = false;
+
+				// Default is 'false' starting Windows Vista and Server 2008. Source: https://msdn.microsoft.com/en-us/library/system.net.sockets.socket.exclusiveaddressuse(v=vs.110).aspx?f=255&MSPPError=-2147217396
+				s.ExclusiveAddressUse = false;
+
+				s.Bind(ipep);
+				s.Listen(8);
+
+				return s;
+			}
+			catch (Exception e)
+			{
+				if (e is SocketException)
+				{
+					var se = (SocketException)e;
+
+					if (se.ErrorCode == 10048)
+					{
+						// WSAEADDRINUSE
+						Utility.PushColor(ConsoleColor.Red);
+						Console.WriteLine("Listener Failed: {0}:{1} (In Use)", ipep.Address, ipep.Port);
+						Utility.PopColor();
+					}
+					else if (se.ErrorCode == 10049)
+					{
+						// WSAEADDRNOTAVAIL
+						Utility.PushColor(ConsoleColor.Red);
+						Console.WriteLine("Listener Failed: {0}:{1} (Unavailable)", ipep.Address, ipep.Port);
+						Utility.PopColor();
+					}
+					else
+					{
+						Utility.PushColor(ConsoleColor.Red);
+						Console.WriteLine("Listener Exception:");
+						Console.WriteLine(e);
+						Utility.PopColor();
+					}
+				}
+
+				return null;
 			}
 		}
 	}
