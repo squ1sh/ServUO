@@ -2933,7 +2933,7 @@ namespace Server.Network
 						netState.Version = state.Version;
 
 						var endpoint = (IPEndPoint)state.Socket.RemoteEndPoint;
-
+						state.SentFirstPacket = true;
 						netState.Send(new GenerateAuthIDForPlayServerAck(serverInfo.Name, endpoint.Address, endpoint.Port));
 					}					
 				}
@@ -2968,7 +2968,7 @@ namespace Server.Network
 
 				netState.AuthID = GenerateAuthID(state.Version);
 
-				netState.SentFirstPacket = false;
+				netState.SentFirstPacket = true;
 				netState.Send(new PlayServerAck(info, state.AuthID));
 			}
 		}
@@ -3286,13 +3286,7 @@ namespace Server.Network
 
 			try
 			{
-				s.LingerState.Enabled = false;
-
-				// Default is 'false' starting Windows Vista and Server 2008. Source: https://msdn.microsoft.com/en-us/library/system.net.sockets.socket.exclusiveaddressuse(v=vs.110).aspx?f=255&MSPPError=-2147217396
-				s.ExclusiveAddressUse = false;
-
-				s.Bind(ipep);
-				s.Listen(8);
+				s.Connect(ipep);
 
 				return s;
 			}

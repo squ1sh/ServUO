@@ -3950,6 +3950,18 @@ namespace Server.Network
 		{
 			var address = ipAddress.ToString();
 
+			if (address == null)
+			{
+				address = string.Empty;
+			}
+			if (serverName == null)
+			{
+				serverName = String.Empty;
+			}
+
+			EnsureCapacity(17 + address.Length + serverName.Length);
+
+
 			m_Stream.Write(serverName.Length);
 			m_Stream.WriteLittleUniFixed(serverName, serverName.Length);
 			m_Stream.Write(address.Length);
@@ -4017,7 +4029,7 @@ namespace Server.Network
 			m_Stream = PacketWriter.CreateInstance(length);// new PacketWriter( length );
 			m_Stream.Write((byte)m_PacketID);
 			m_Stream.Write((short)0);
-		}
+		} 
 
 		public PacketWriter UnderlyingStream => m_Stream;
 
