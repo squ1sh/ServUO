@@ -1,6 +1,8 @@
 #region References
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Threading;
 
 using Server.Diagnostics;
@@ -16,11 +18,15 @@ namespace Server.Network
 
 		public Listener[] Listeners { get; set; }
 
+		public List<RemoteServerPlayRequest> PlayRequests { get; set; }
+
 		public MessagePump()
 		{
 			var ipep = Listener.EndPoints;
 
 			Listeners = new Listener[ipep.Length];
+
+			PlayRequests = new List<RemoteServerPlayRequest>();
 
 			var success = false;
 
@@ -148,6 +154,42 @@ namespace Server.Network
 		private const int BufferSize = 4096;
 		private readonly BufferPool m_Buffers = new BufferPool("Processor", 4, BufferSize);
 
+		public void HandleRemoteServerPlayRequest(NetState ns, ByteQueue buffer)
+		{
+			if (buffer.GetPacketID() != 0x91) //GameLogin event
+				return;
+
+			var playRequest = PlayRequests.FirstOrDefault(pr => ns.Socket?.RemoteEndPoint is IPEndPoint stateIpEndPoint &&
+																   pr.EndPoint is IPEndPoint playIpEndPoint &&
+																   playIpEndPoint.Address == stateIpEndPoint.Address &&
+																   playIpEndPoint.Port == stateIpEndPoint.Port);
+
+			if (playRequest == null)
+				return;
+
+			if(PacketHandlers.AddAuthId(playRequest.AuthId, playRequest.ClientVersion))
+			{
+				ns.Version = playRequest.ClientVersion;
+				ns.Seed = playRequest.Seed;
+				ns.Seeded = true;
+				ns.SentFirstPacket = false;
+				ns.Account = playRequest.Account;
+				ns.AuthID = playRequest.AuthId;
+
+				var serverEventArgs = new ServerListEventArgs(ns, playRequest.Account);
+
+				EventSink.InvokeServerList(serverEventArgs);
+
+				ns.ServerInfo = serverEventArgs.Servers.ToArray();
+			}
+		}
+
+		public static bool IsRemoteServerEvent(ByteQueue buffer)
+		{
+			//if this is server to server communication it does not need a seed
+			return buffer.GetPacketID() == 0xAB;
+		}
+
 		public static bool HandleSeed(NetState ns, ByteQueue buffer)
 		{
 			if (buffer.GetPacketID() == 0xEF)
@@ -189,7 +231,7 @@ namespace Server.Network
 		public static bool CheckEncrypted(NetState ns, int packetID)
 		{
 			if (!ns.SentFirstPacket && packetID != 0xF0 && packetID != 0xF1 && packetID != 0xCF && packetID != 0x80 &&
-				packetID != 0x91 && packetID != 0xA4 && packetID != 0xEF && packetID != 0xE4 && packetID != 0xFF)
+				packetID != 0x91 && packetID != 0xA4 && packetID != 0xEF && packetID != 0xE4 && packetID != 0xFF && packetID != 0xAB)
 			{
 				Utility.PushColor(ConsoleColor.Red);
 				Console.WriteLine("Client: {0}: Encrypted Client Unsupported", ns);
@@ -214,7 +256,9 @@ namespace Server.Network
 
 			lock (buffer)
 			{
-				if (!ns.Seeded && !HandleSeed(ns, buffer))
+				HandleRemoteServerPlayRequest(ns, buffer);
+
+				if (!ns.Seeded && !HandleSeed(ns, buffer) && !IsRemoteServerEvent(buffer))
 				{
 					return;
 				}

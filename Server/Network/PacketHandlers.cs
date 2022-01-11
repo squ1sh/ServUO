@@ -98,7 +98,7 @@ namespace Server.Network
 			Register(0x9D, 51, true, GMSingle);
 			Register(0x9F, 0, true, VendorSellReply);
 			Register(0xA0, 3, false, PlayServer);
-			Register(0xAB, 0, false, GenerateAuthIDForPlayServer);
+			Register(0xAB, 0, false, PrepareRemoteServerPlay);
 			Register(0xA4, 149, false, SystemInfo);
 			Register(0xA7, 4, true, RequestScrollWindow);
 			Register(0xAD, 0, true, UnicodeSpeech);
@@ -2772,7 +2772,7 @@ namespace Server.Network
 		private static readonly Dictionary<uint, AuthIDPersistence> m_AuthIDWindow =
 			new Dictionary<uint, AuthIDPersistence>(m_AuthIDWindowSize);
 
-		private static uint GenerateAuthID(ClientVersion clientVersion)
+		private static void PruneOldestAuthIdWindowSize()
 		{
 			if (m_AuthIDWindow.Count == m_AuthIDWindowSize)
 			{
@@ -2790,6 +2790,24 @@ namespace Server.Network
 
 				m_AuthIDWindow.Remove(oldestID);
 			}
+		}
+
+		public static bool AddAuthId(uint authId, ClientVersion clientVersion)
+		{
+			if(m_AuthIDWindow.ContainsKey(authId))
+			{
+				return false;
+			}
+
+			PruneOldestAuthIdWindowSize();
+			m_AuthIDWindow[authId] = new AuthIDPersistence(clientVersion);
+
+			return true;
+		}
+
+		private static uint GenerateAuthID(ClientVersion clientVersion)
+		{
+			PruneOldestAuthIdWindowSize();
 
 			uint authID;
 
@@ -2913,63 +2931,82 @@ namespace Server.Network
 			{
 				var serverInfo = info[index];
 
-				if(serverInfo.Name == Core.ServerName)
-				{
-					state.AuthID = GenerateAuthID(state.Version);
+				state.AuthID = GenerateAuthID(state.Version);
 
-					state.SentFirstPacket = false;
-					state.Send(new PlayServerAck(info[index], state.AuthID));
-				}
-				else
+				if(serverInfo.Name != Core.ServerName)
 				{
 					var serverDetails = info.FirstOrDefault(sd => sd.Name == serverInfo.Name);
 
 					if (serverDetails != null)
 					{
 						var socket = GetSocket(serverDetails.Address.Address, serverDetails.Address.Port);
-
 						var netState = new NetState(socket, Core.MessagePump);
 
-						netState.Version = state.Version;
-
-						var endpoint = (IPEndPoint)state.Socket.RemoteEndPoint;
-						state.SentFirstPacket = true;
-						netState.Send(new GenerateAuthIDForPlayServerAck(serverInfo.Name, endpoint.Address, endpoint.Port));
-					}					
+						netState.Send(new PrepareRemoteServerPlay(state));
+						netState.Dispose();
+					}
 				}
+
+				state.SentFirstPacket = false;
+				state.Send(new PlayServerAck(info[index], state.AuthID));
 			}
 		}
 
-		public static void GenerateAuthIDForPlayServer(NetState state, PacketReader pvSrc)
+		public static void PrepareRemoteServerPlay(NetState state, PacketReader pvSrc)
 		{
-			int lengthOfName = pvSrc.ReadInt32();
-			string serverName = pvSrc.ReadUnicodeStringLESafe(lengthOfName);
-			int lengthOfAddress = pvSrc.ReadInt32();
-			string address = pvSrc.ReadUnicodeStringLESafe(lengthOfAddress);
+			int address = pvSrc.ReadInt64();
 			int port = pvSrc.ReadInt32();
+			uint seed = pvSrc.ReadUInt32();
+			uint authId = pvSrc.ReadUInt32();
+			string username = pvSrc.ReadString(30);
+			int versionMajor = pvSrc.ReadInt32();
+			int versionMinor = pvSrc.ReadInt32();
+			int versionRevision = pvSrc.ReadInt32();
+			int versionPatch = pvSrc.ReadInt32();
 
-			var a = state.Account;
+			var endPoint = new IPEndPoint(address, port);
+			var version = new ClientVersion(versionMajor, versionMinor, versionRevision, versionPatch);
 
-			var info = state.ServerInfo.FirstOrDefault(si => si.Name == serverName);
+			var e = new GetAccoutByUsernameEventArgs(username);
 
-			if (a == null || info == null || !IPAddress.TryParse(address, out var ipAddress))
+			EventSink.InvokeGetAccountByUsername(e);
+
+			if (e?.Account == null)
 			{
-				Utility.PushColor(ConsoleColor.Red);
-				Console.WriteLine("Client: {0}: Invalid Server ({1}|{2})", state, address, serverName);
-				Utility.PopColor();
+				return;
+			}
 
-				state.Dispose();
+			var netState = NetState.Instances.FirstOrDefault(ns => ns.Socket?.RemoteEndPoint is IPEndPoint ipEndPoint &&
+																   ipEndPoint.Address == endPoint.Address &&
+																   ipEndPoint.Port == endPoint.Port);
+
+			//if we already have a connection to the server
+			if (netState != null &&
+				!AddAuthId(authId, version))
+			{
+				netState.Version = version;
+				netState.Seed = seed;
+				netState.Seeded = true;
+				netState.SentFirstPacket = false;
+				netState.Account = e.Account;
+				netState.AuthID = authId;
+
+				var serverEventArgs = new ServerListEventArgs(state, state.Account);
+
+				EventSink.InvokeServerList(serverEventArgs);
+
+				state.ServerInfo = serverEventArgs.Servers.ToArray();
 			}
 			else
 			{
-				var socket = GetSocket(ipAddress, port);
-
-				var netState = new NetState(socket, Core.MessagePump);
-
-				netState.AuthID = GenerateAuthID(state.Version);
-
-				netState.SentFirstPacket = true;
-				netState.Send(new PlayServerAck(info, state.AuthID));
+				Core.MessagePump.PlayRequests.Add(new RemoteServerPlayRequest
+				{
+					EndPoint = endPoint,
+					ClientVersion = version,
+					Seed = seed,
+					AuthId = authId,
+					Account = e.Account
+				});
 			}
 		}
 

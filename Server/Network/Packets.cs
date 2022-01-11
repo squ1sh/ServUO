@@ -3943,30 +3943,23 @@ namespace Server.Network
 		}
 	}
 
-	public sealed class GenerateAuthIDForPlayServerAck : Packet
+	public sealed class PrepareRemoteServerPlay : Packet
 	{
-		public GenerateAuthIDForPlayServerAck(string serverName, IPAddress ipAddress, int port)
-			: base(0xAB)
+		public PrepareRemoteServerPlay(NetState state)
+			: base(0xAB, 67)
 		{
-			var address = ipAddress.ToString();
+			var endpoint = (IPEndPoint)state.Socket.RemoteEndPoint;
 
-			if (address == null)
-			{
-				address = string.Empty;
-			}
-			if (serverName == null)
-			{
-				serverName = String.Empty;
-			}
+			m_Stream.Write(Utility.GetLongAddressValue(endpoint.Address));
+			m_Stream.Write(endpoint.Port);
+			m_Stream.Write(state.Seed);
+			m_Stream.Write(state.AuthID);
+			m_Stream.WriteAsciiFixed(state.Account?.Username ?? string.Empty, 30);
 
-			EnsureCapacity(17 + address.Length + serverName.Length);
-
-
-			m_Stream.Write(serverName.Length);
-			m_Stream.WriteLittleUniFixed(serverName, serverName.Length);
-			m_Stream.Write(address.Length);
-			m_Stream.WriteLittleUniFixed(address, address.Length);
-			m_Stream.Write(port);
+			m_Stream.Write(state.Version.Major);
+			m_Stream.Write(state.Version.Minor);
+			m_Stream.Write(state.Version.Revision);
+			m_Stream.Write(state.Version.Patch);
 		}
 	}
 

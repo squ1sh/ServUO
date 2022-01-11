@@ -77,6 +77,8 @@ namespace Server
 
 	public delegate void AccountLoginEventHandler(AccountLoginEventArgs e);
 
+	public delegate void GetAccoutByUsernameEventHandler(GetAccoutByUsernameEventArgs e);
+
 	public delegate void PaperdollRequestEventHandler(PaperdollRequestEventArgs e);
 
 	public delegate void ContainerSortSettingsRequestEventHandler(ContainerSortSettingsRequestEventArgs e);
@@ -476,6 +478,18 @@ namespace Server
 		{
 			m_Mobile = mobile;
 			m_Container = container;
+		}
+	}
+
+	public class GetAccoutByUsernameEventArgs : EventArgs
+	{
+		private readonly string m_Username;
+		public string Username => m_Username;
+		public IAccount Account { get; set; }
+
+		public GetAccoutByUsernameEventArgs(string username)
+		{
+			m_Username = username;
 		}
 	}
 
@@ -1737,6 +1751,8 @@ namespace Server
 		public static event VirtueItemRequestEventHandler VirtueItemRequest;
 		public static event VirtueMacroRequestEventHandler VirtueMacroRequest;
 		public static event AccountLoginEventHandler AccountLogin;
+		public static event GetAccoutByUsernameEventHandler GetAccountByUsername;
+
 		public static event PaperdollRequestEventHandler PaperdollRequest;
 		public static event ContainerSortSettingsRequestEventHandler ContainerSortSettingsRequest;
 		public static event ProfileRequestEventHandler ProfileRequest;
@@ -1967,6 +1983,14 @@ namespace Server
 			if (AccountLogin != null)
 			{
 				AccountLogin(e);
+			}
+		}
+
+		public static void InvokeGetAccountByUsername(GetAccoutByUsernameEventArgs e)
+		{
+			if(GetAccountByUsername != null)
+			{
+				GetAccountByUsername(e);
 			}
 		}
 
