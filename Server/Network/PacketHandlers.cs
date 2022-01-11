@@ -98,7 +98,7 @@ namespace Server.Network
 			Register(0x9D, 51, true, GMSingle);
 			Register(0x9F, 0, true, VendorSellReply);
 			Register(0xA0, 3, false, PlayServer);
-			Register(0xAB, 0, false, PrepareRemoteServerPlay);
+			Register(0xAB, 63, false, PrepareRemoteServerPlay);
 			Register(0xA4, 149, false, SystemInfo);
 			Register(0xA7, 4, true, RequestScrollWindow);
 			Register(0xAD, 0, true, UnicodeSpeech);
@@ -2954,7 +2954,7 @@ namespace Server.Network
 
 		public static void PrepareRemoteServerPlay(NetState state, PacketReader pvSrc)
 		{
-			int address = pvSrc.ReadInt64();
+			int address = pvSrc.ReadInt32();
 			int port = pvSrc.ReadInt32();
 			uint seed = pvSrc.ReadUInt32();
 			uint authId = pvSrc.ReadUInt32();

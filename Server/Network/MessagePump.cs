@@ -258,7 +258,7 @@ namespace Server.Network
 			{
 				HandleRemoteServerPlayRequest(ns, buffer);
 
-				if (!ns.Seeded && !HandleSeed(ns, buffer) && !IsRemoteServerEvent(buffer))
+				if (!ns.Seeded && !IsRemoteServerEvent(buffer) && !HandleSeed(ns, buffer))
 				{
 					return;
 				}

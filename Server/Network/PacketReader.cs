@@ -66,18 +66,6 @@ namespace Server.Network
 			return m_Index;
 		}
 
-		public int ReadInt64()
-		{
-			if ((m_Index + 8) > m_Size)
-			{
-				return 0;
-			}
-
-			return (m_Data[m_Index++] << 56) | (m_Data[m_Index++] << 48) | (m_Data[m_Index++] << 40) |
-				   (m_Data[m_Index++] << 32) | (m_Data[m_Index++] << 24) | (m_Data[m_Index++] << 16) |
-				   (m_Data[m_Index++] << 8) | m_Data[m_Index++];
-		}
-
 		public int ReadInt32()
 		{
 			if ((m_Index + 4) > m_Size)
