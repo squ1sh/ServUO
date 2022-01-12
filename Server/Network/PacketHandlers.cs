@@ -2853,7 +2853,7 @@ namespace Server.Network
 
 			EventSink.InvokeGameLogin(e);
 
-			var playRequest = Core.MessagePump.PlayRequests.FirstOrDefault(pr => pr?.Account?.Username == username && pr.AuthId == authID);
+			var playRequest = Core.MessagePump.PlayRequests.FirstOrDefault(pr => string.Equals(pr?.Account?.Username, username, StringComparison.InvariantCultureIgnoreCase) && pr.AuthId == authID);
 
 			//if the login was successful and we were expecting a login to this game server from another server then populate the needed info on state
 			if (e.Accepted && playRequest != null && PacketHandlers.AddAuthId(playRequest.AuthId, playRequest.ClientVersion))
@@ -2964,6 +2964,7 @@ namespace Server.Network
 						var netState = new NetState(socket, Core.MessagePump);
 
 						netState.Send(new PrepareRemoteServerPlay(state));
+						netState.Flush();
 						netState.Dispose();
 					}
 				}
@@ -2995,7 +2996,7 @@ namespace Server.Network
 				return;
 			}
 
-			var netState = NetState.Instances.FirstOrDefault(ns => ns?.Account?.Username == username);
+			var netState = NetState.Instances.FirstOrDefault(ns => string.Equals(ns?.Account?.Username, username, StringComparison.InvariantCultureIgnoreCase));
 
 			//if we already have a connection to the server
 			if (netState != null &&
