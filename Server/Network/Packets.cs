@@ -3943,10 +3943,20 @@ namespace Server.Network
 		}
 	}
 
+	public sealed class RemoteServerPlayAck : Packet
+	{
+		public RemoteServerPlayAck(string responseKey)
+			: base(0xAC, 37)
+		{
+			m_Stream.WriteAsciiFixed(responseKey, 36);
+
+		}
+	}
+
 	public sealed class PrepareRemoteServerPlay : Packet
 	{
-		public PrepareRemoteServerPlay(NetState state)
-			: base(0xAB, 55)
+		public PrepareRemoteServerPlay(NetState state, string responseKey)
+			: base(0xAB, 91)
 		{
 			var endpoint = (IPEndPoint)state.Socket.RemoteEndPoint;
 
@@ -3958,6 +3968,7 @@ namespace Server.Network
 			m_Stream.Write(state.Version.Minor);
 			m_Stream.Write(state.Version.Revision);
 			m_Stream.Write(state.Version.Patch);
+			m_Stream.WriteAsciiFixed(responseKey, 36);
 		}
 	}
 

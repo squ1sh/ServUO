@@ -156,8 +156,9 @@ namespace Server.Network
 
 		public static bool IsRemoteServerEvent(ByteQueue buffer)
 		{
+			byte packetId = buffer.GetPacketID();
 			//if this is server to server communication it does not need a seed
-			return buffer.GetPacketID() == 0xAB;
+			return packetId == 0xAB || packetId == 0xAC;
 		}
 
 		public static bool HandleSeed(NetState ns, ByteQueue buffer)

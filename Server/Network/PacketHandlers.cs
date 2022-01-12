@@ -45,6 +45,8 @@ namespace Server.Network
 		private static readonly EncodedPacketHandler[] m_EncodedHandlersLow;
 		private static readonly Dictionary<int, EncodedPacketHandler> m_EncodedHandlersHigh;
 
+		private static readonly Dictionary<string, RemoteServerPlayResponse> m_RemoteServerPlayResponses = new Dictionary<string, RemoteServerPlayResponse>();
+
 		static PacketHandlers()
 		{
 			m_Handlers = new PacketHandler[0x100];
@@ -98,7 +100,8 @@ namespace Server.Network
 			Register(0x9D, 51, true, GMSingle);
 			Register(0x9F, 0, true, VendorSellReply);
 			Register(0xA0, 3, false, PlayServer);
-			Register(0xAB, 55, false, PrepareRemoteServerPlay);
+			Register(0xAB, 91, false, PrepareRemoteServerPlay);
+			Register(0xAC, 37, false, RemoteServerPlayAck);
 			Register(0xA4, 149, false, SystemInfo);
 			Register(0xA7, 4, true, RequestScrollWindow);
 			Register(0xAD, 0, true, UnicodeSpeech);
@@ -2870,6 +2873,8 @@ namespace Server.Network
 				EventSink.InvokeServerList(serverEventArgs);
 
 				state.ServerInfo = serverEventArgs.Servers.ToArray();
+
+				Core.MessagePump.PlayRequests.Remove(playRequest);
 			}
 
 			if (state.SentFirstPacket)
@@ -2915,9 +2920,7 @@ namespace Server.Network
 
 				state.Dispose();
 				return;
-			}
-
-			
+			}			
 
 			if (e.Accepted)
 			{
@@ -2953,24 +2956,43 @@ namespace Server.Network
 				var serverInfo = info[index];
 
 				state.AuthID = GenerateAuthID(state.Version);
-
-				if(serverInfo.Name != Core.ServerName)
-				{
-					var serverDetails = info.FirstOrDefault(sd => sd.Name == serverInfo.Name);
-
-					if (serverDetails != null)
-					{
-						var socket = GetSocket(serverDetails.Address.Address, serverDetails.Address.Port);
-						var netState = new NetState(socket, Core.MessagePump);
-
-						netState.Send(new PrepareRemoteServerPlay(state));
-						netState.Flush();
-						netState.Dispose();
-					}
-				}
-
 				state.SentFirstPacket = false;
-				state.Send(new PlayServerAck(info[index], state.AuthID));
+
+				var playServerAck = new PlayServerAck(info[index], state.AuthID);
+				var serverDetails = info.FirstOrDefault(sd => sd.Name == serverInfo.Name);
+
+				if (serverInfo.Name != Core.ServerName && serverDetails != null)
+				{
+					var socket = GetSocket(serverDetails.Address.Address, serverDetails.Address.Port);
+					var netState = new NetState(socket, Core.MessagePump);
+
+					var responseKey = Guid.NewGuid().ToString();
+					m_RemoteServerPlayResponses[responseKey] = new RemoteServerPlayResponse
+					{
+						SendingState = netState,
+						RespondingState = state,
+						PlayServerAck = playServerAck
+					};
+
+					netState.Send(new PrepareRemoteServerPlay(state, responseKey));
+					netState.Flush();
+				}
+				else
+				{
+					state.Send(playServerAck);
+				}
+			}
+		}
+
+		public static void RemoteServerPlayAck(NetState state, PacketReader pvSrc)
+		{
+			string key = pvSrc.ReadString(36);
+
+			if (m_RemoteServerPlayResponses.ContainsKey(key))
+			{
+				var responseState = m_RemoteServerPlayResponses[key];
+				responseState.RespondingState.Send(responseState.PlayServerAck);
+				responseState.SendingState.Dispose();
 			}
 		}
 
@@ -2983,6 +3005,7 @@ namespace Server.Network
 			int versionMinor = pvSrc.ReadInt32();
 			int versionRevision = pvSrc.ReadInt32();
 			int versionPatch = pvSrc.ReadInt32();
+			string responseKey = pvSrc.ReadString(36);
 
 
 			var version = new ClientVersion(versionMajor, versionMinor, versionRevision, versionPatch);
@@ -3014,6 +3037,8 @@ namespace Server.Network
 				EventSink.InvokeServerList(serverEventArgs);
 
 				state.ServerInfo = serverEventArgs.Servers.ToArray();
+
+				NetState.Instances.Remove(netState);
 			}
 			else
 			{
@@ -3025,6 +3050,8 @@ namespace Server.Network
 					Account = e.Account
 				});
 			}
+
+			state.Send(new RemoteServerPlayAck(responseKey));
 		}
 
 		public static void LoginServerSeed(NetState state, PacketReader pvSrc)
