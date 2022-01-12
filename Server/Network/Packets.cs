@@ -3956,7 +3956,7 @@ namespace Server.Network
 	public sealed class PrepareRemoteServerPlay : Packet
 	{
 		public PrepareRemoteServerPlay(NetState state, string responseKey)
-			: base(0xAB, 91)
+			: base(0xAB, 123)
 		{
 			var endpoint = (IPEndPoint)state.Socket.RemoteEndPoint;
 
@@ -3969,6 +3969,7 @@ namespace Server.Network
 			m_Stream.Write(state.Version.Revision);
 			m_Stream.Write(state.Version.Patch);
 			m_Stream.WriteAsciiFixed(responseKey, 36);
+			m_Stream.WriteAsciiFixed(Core.ServerName, 32);
 		}
 	}
 

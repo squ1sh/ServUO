@@ -202,7 +202,7 @@ namespace Server.Network
 		public static bool CheckEncrypted(NetState ns, int packetID)
 		{
 			if (!ns.SentFirstPacket && packetID != 0xF0 && packetID != 0xF1 && packetID != 0xCF && packetID != 0x80 &&
-				packetID != 0x91 && packetID != 0xA4 && packetID != 0xEF && packetID != 0xE4 && packetID != 0xFF && packetID != 0xAB)
+				packetID != 0x91 && packetID != 0xA4 && packetID != 0xEF && packetID != 0xE4 && packetID != 0xFF && packetID != 0xAB && packetID != 0xAC)
 			{
 				Utility.PushColor(ConsoleColor.Red);
 				Console.WriteLine("Client: {0}: Encrypted Client Unsupported", ns);

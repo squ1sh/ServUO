@@ -9,5 +9,6 @@ namespace Server.Network
 		public uint Seed { get; set; }
 		public uint AuthId { get; set; }
 		public IAccount Account { get; set; }
+		public NetState RemoteServerNetState { get; set; }
 	}
 }

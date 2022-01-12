@@ -100,7 +100,7 @@ namespace Server.Network
 			Register(0x9D, 51, true, GMSingle);
 			Register(0x9F, 0, true, VendorSellReply);
 			Register(0xA0, 3, false, PlayServer);
-			Register(0xAB, 91, false, PrepareRemoteServerPlay);
+			Register(0xAB, 123, false, PrepareRemoteServerPlay);
 			Register(0xAC, 37, false, RemoteServerPlayAck);
 			Register(0xA4, 149, false, SystemInfo);
 			Register(0xA7, 4, true, RequestScrollWindow);
@@ -2874,6 +2874,8 @@ namespace Server.Network
 
 				state.ServerInfo = serverEventArgs.Servers.ToArray();
 
+				playRequest.RemoteServerNetState?.Dispose();
+
 				Core.MessagePump.PlayRequests.Remove(playRequest);
 			}
 
@@ -3006,7 +3008,7 @@ namespace Server.Network
 			int versionRevision = pvSrc.ReadInt32();
 			int versionPatch = pvSrc.ReadInt32();
 			string responseKey = pvSrc.ReadString(36);
-
+			string remoteServerName = pvSrc.ReadString(32);
 
 			var version = new ClientVersion(versionMajor, versionMinor, versionRevision, versionPatch);
 
@@ -3019,39 +3021,35 @@ namespace Server.Network
 				return;
 			}
 
-			var netState = NetState.Instances.FirstOrDefault(ns => string.Equals(ns?.Account?.Username, username, StringComparison.InvariantCultureIgnoreCase));
+			var serverEventArgs = new ServerListEventArgs(state, e.Account);
+			EventSink.InvokeServerList(serverEventArgs);
+			var remoteServerInfo = serverEventArgs.Servers.FirstOrDefault(s => s.Name == remoteServerName);
 
-			//if we already have a connection to the server
-			if (netState != null &&
-				!AddAuthId(authId, version))
+			NetState remoteServerNetState = null;
+
+			if(remoteServerInfo != null)
 			{
-				netState.Version = version;
-				netState.Seed = seed;
-				netState.Seeded = true;
-				netState.SentFirstPacket = false;
-				netState.Account = e.Account;
-				netState.AuthID = authId;
-
-				var serverEventArgs = new ServerListEventArgs(state, state.Account);
-
-				EventSink.InvokeServerList(serverEventArgs);
-
-				state.ServerInfo = serverEventArgs.Servers.ToArray();
-
-				NetState.Instances.Remove(netState);
+				var socket = GetSocket(remoteServerInfo.Address.Address, remoteServerInfo.Address.Port);
+				remoteServerNetState = new NetState(socket, Core.MessagePump);
 			}
-			else
+
+			if (!Core.MessagePump.PlayRequests.Any(pr => string.Equals(pr?.Account?.Username, username, StringComparison.InvariantCultureIgnoreCase) && pr.AuthId == authId))
 			{
 				Core.MessagePump.PlayRequests.Add(new RemoteServerPlayRequest
 				{
 					ClientVersion = version,
 					Seed = seed,
 					AuthId = authId,
-					Account = e.Account
+					Account = e.Account,
+					RemoteServerNetState = remoteServerNetState
 				});
 			}
 
-			state.Send(new RemoteServerPlayAck(responseKey));
+			if(remoteServerNetState != null)
+			{
+				remoteServerNetState.Send(new RemoteServerPlayAck(responseKey));
+				remoteServerNetState.Flush();
+			}			
 		}
 
 		public static void LoginServerSeed(NetState state, PacketReader pvSrc)
