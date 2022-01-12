@@ -98,7 +98,7 @@ namespace Server.Network
 			Register(0x9D, 51, true, GMSingle);
 			Register(0x9F, 0, true, VendorSellReply);
 			Register(0xA0, 3, false, PlayServer);
-			Register(0xAB, 63, false, PrepareRemoteServerPlay);
+			Register(0xAB, 55, false, PrepareRemoteServerPlay);
 			Register(0xA4, 149, false, SystemInfo);
 			Register(0xA7, 4, true, RequestScrollWindow);
 			Register(0xAD, 0, true, UnicodeSpeech);
@@ -2844,6 +2844,34 @@ namespace Server.Network
 
 		public static void GameLogin(NetState state, PacketReader pvSrc)
 		{
+			var authID = pvSrc.ReadUInt32();
+
+			var username = pvSrc.ReadString(30);
+			var password = pvSrc.ReadString(30);
+
+			var e = new GameLoginEventArgs(state, username, password);
+
+			EventSink.InvokeGameLogin(e);
+
+			var playRequest = Core.MessagePump.PlayRequests.FirstOrDefault(pr => pr?.Account?.Username == username && pr.AuthId == authID);
+
+			//if the login was successful and we were expecting a login to this game server from another server then populate the needed info on state
+			if (e.Accepted && playRequest != null && PacketHandlers.AddAuthId(playRequest.AuthId, playRequest.ClientVersion))
+			{
+				state.Version = playRequest.ClientVersion;
+				//ns.Seed = playRequest.Seed;
+				//ns.Seeded = true;
+				state.SentFirstPacket = false;
+				state.Account = playRequest.Account;
+				state.AuthID = playRequest.AuthId;
+
+				var serverEventArgs = new ServerListEventArgs(state, playRequest.Account);
+
+				EventSink.InvokeServerList(serverEventArgs);
+
+				state.ServerInfo = serverEventArgs.Servers.ToArray();
+			}
+
 			if (state.SentFirstPacket)
 			{
 				state.Dispose();
@@ -2851,8 +2879,6 @@ namespace Server.Network
 			}
 
 			state.SentFirstPacket = true;
-
-			var authID = pvSrc.ReadUInt32();
 
 			if (m_AuthIDWindow.ContainsKey(authID))
 			{
@@ -2891,12 +2917,7 @@ namespace Server.Network
 				return;
 			}
 
-			var username = pvSrc.ReadString(30);
-			var password = pvSrc.ReadString(30);
-
-			var e = new GameLoginEventArgs(state, username, password);
-
-			EventSink.InvokeGameLogin(e);
+			
 
 			if (e.Accepted)
 			{
@@ -2954,8 +2975,6 @@ namespace Server.Network
 
 		public static void PrepareRemoteServerPlay(NetState state, PacketReader pvSrc)
 		{
-			int address = pvSrc.ReadInt32();
-			int port = pvSrc.ReadInt32();
 			uint seed = pvSrc.ReadUInt32();
 			uint authId = pvSrc.ReadUInt32();
 			string username = pvSrc.ReadString(30);
@@ -2964,7 +2983,7 @@ namespace Server.Network
 			int versionRevision = pvSrc.ReadInt32();
 			int versionPatch = pvSrc.ReadInt32();
 
-			var endPoint = new IPEndPoint(address, port);
+
 			var version = new ClientVersion(versionMajor, versionMinor, versionRevision, versionPatch);
 
 			var e = new GetAccoutByUsernameEventArgs(username);
@@ -2976,9 +2995,7 @@ namespace Server.Network
 				return;
 			}
 
-			var netState = NetState.Instances.FirstOrDefault(ns => ns.Socket?.RemoteEndPoint is IPEndPoint ipEndPoint &&
-																   ipEndPoint.Address == endPoint.Address &&
-																   ipEndPoint.Port == endPoint.Port);
+			var netState = NetState.Instances.FirstOrDefault(ns => ns?.Account?.Username == username);
 
 			//if we already have a connection to the server
 			if (netState != null &&
@@ -3001,7 +3018,6 @@ namespace Server.Network
 			{
 				Core.MessagePump.PlayRequests.Add(new RemoteServerPlayRequest
 				{
-					EndPoint = endPoint,
 					ClientVersion = version,
 					Seed = seed,
 					AuthId = authId,

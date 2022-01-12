@@ -154,36 +154,6 @@ namespace Server.Network
 		private const int BufferSize = 4096;
 		private readonly BufferPool m_Buffers = new BufferPool("Processor", 4, BufferSize);
 
-		public void HandleRemoteServerPlayRequest(NetState ns, ByteQueue buffer)
-		{
-			if (buffer.GetPacketID() != 0x91) //GameLogin event
-				return;
-
-			var playRequest = PlayRequests.FirstOrDefault(pr => ns.Socket?.RemoteEndPoint is IPEndPoint stateIpEndPoint &&
-																   pr.EndPoint is IPEndPoint playIpEndPoint &&
-																   playIpEndPoint.Address == stateIpEndPoint.Address &&
-																   playIpEndPoint.Port == stateIpEndPoint.Port);
-
-			if (playRequest == null)
-				return;
-
-			if(PacketHandlers.AddAuthId(playRequest.AuthId, playRequest.ClientVersion))
-			{
-				ns.Version = playRequest.ClientVersion;
-				ns.Seed = playRequest.Seed;
-				ns.Seeded = true;
-				ns.SentFirstPacket = false;
-				ns.Account = playRequest.Account;
-				ns.AuthID = playRequest.AuthId;
-
-				var serverEventArgs = new ServerListEventArgs(ns, playRequest.Account);
-
-				EventSink.InvokeServerList(serverEventArgs);
-
-				ns.ServerInfo = serverEventArgs.Servers.ToArray();
-			}
-		}
-
 		public static bool IsRemoteServerEvent(ByteQueue buffer)
 		{
 			//if this is server to server communication it does not need a seed
@@ -256,8 +226,6 @@ namespace Server.Network
 
 			lock (buffer)
 			{
-				HandleRemoteServerPlayRequest(ns, buffer);
-
 				if (!ns.Seeded && !IsRemoteServerEvent(buffer) && !HandleSeed(ns, buffer))
 				{
 					return;

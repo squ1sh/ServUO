@@ -3946,12 +3946,10 @@ namespace Server.Network
 	public sealed class PrepareRemoteServerPlay : Packet
 	{
 		public PrepareRemoteServerPlay(NetState state)
-			: base(0xAB, 63)
+			: base(0xAB, 55)
 		{
 			var endpoint = (IPEndPoint)state.Socket.RemoteEndPoint;
 
-			m_Stream.Write(Utility.GetAddressValue(endpoint.Address));
-			m_Stream.Write(endpoint.Port);
 			m_Stream.Write(state.Seed);
 			m_Stream.Write(state.AuthID);
 			m_Stream.WriteAsciiFixed(state.Account?.Username ?? string.Empty, 30);
