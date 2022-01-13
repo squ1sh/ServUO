@@ -16,7 +16,9 @@ namespace Server.Accounting
         {
             EventSink.WorldLoad += Load;
             EventSink.WorldSave += Save;
-        }
+			EventSink.MergeAccountFile += MergeAccounts;
+			EventSink.ChangeCharacterShard += ChangeShardName;
+		}
 
         static Accounts()
         {
@@ -102,9 +104,9 @@ namespace Server.Accounting
 			return accountRecords;
 		}
 
-		private static XmlNodeList GetAccountNode()
+		private static XmlNodeList GetAccountNode(string accountFileLocation = null)
 		{
-			string filePath = Path.Combine(AccountDirectory, "accounts.xml");
+			string filePath = accountFileLocation ?? Path.Combine(AccountDirectory, "accounts.xml");
 
 			if (!File.Exists(filePath))
 				return null;
@@ -162,5 +164,176 @@ namespace Server.Accounting
 				Diagnostics.ExceptionLogging.LogException(ex);
 			}			
         }
+
+		public static void ChangeShardName(ChangeCharacterShardEventArgs e)
+		{
+			try
+			{
+				e.Success = true;
+
+				var currentAccounts = GetAccountNode();
+
+				var accounts = new List<XmlElement> ();
+
+				if (currentAccounts != null)
+				{
+					foreach (XmlElement accountXml in currentAccounts)
+					{
+						foreach(XmlElement characterElement in accountXml["chars"].GetElementsByTagName("char"))
+						{
+							var serverName = Utility.GetAttribute(characterElement, "server", "");
+
+							if (serverName.Equals(e.OldShardName, StringComparison.OrdinalIgnoreCase))
+							{
+								characterElement.SetAttribute("server", Core.ServerName);
+							}
+						}
+
+						accounts.Add(accountXml);
+					}
+				}
+
+				if (!Directory.Exists(AccountDirectory))
+					Directory.CreateDirectory(AccountDirectory);
+
+				string filePath = Path.Combine(AccountDirectory, "accounts.xml");
+
+				using (StreamWriter op = new StreamWriter(filePath))
+				{
+					XmlTextWriter xml = new XmlTextWriter(op)
+					{
+						Formatting = Formatting.Indented,
+						IndentChar = '\t',
+						Indentation = 1
+					};
+
+					xml.WriteStartDocument(true);
+
+					xml.WriteStartElement("accounts");
+
+					xml.WriteAttributeString("count", accounts.Count.ToString());
+
+					accounts.ForEach(a => a.WriteTo(xml));
+
+					xml.WriteEndElement();
+
+					xml.Close();
+				}
+			}
+			catch (Exception ex)
+			{
+				e.Success = false;
+				Console.WriteLine("Warning: Account file failed to save.");
+				Diagnostics.ExceptionLogging.LogException(ex);
+			}
+		}
+
+		public static void MergeAccounts(MergeAccountsEventArgs e)
+		{
+			try
+			{
+				e.Success = true;
+
+				var currentAccounts = GetAccountNode();
+				var otherAccounts = GetAccountNode(e.AccountFileLocation);
+
+				var mergedAccounts = new List<XmlElement>();
+
+				if (currentAccounts != null)
+				{
+					foreach (XmlElement accountXml in currentAccounts)
+					{
+						var username = Utility.GetText(accountXml["username"], "empty");
+
+						XmlElement charsNode = accountXml["chars"];
+
+						if(otherAccounts != null)
+						{
+							foreach (XmlElement otherAccountXml in otherAccounts)
+							{
+								var otherUsername = Utility.GetText(otherAccountXml["username"], "empty");
+
+								if(username.Equals(otherUsername, StringComparison.OrdinalIgnoreCase))
+								{
+									foreach (XmlElement otherChar in otherAccountXml["chars"].GetElementsByTagName("char"))
+									{
+										var newElement = charsNode.OwnerDocument.ImportNode(otherChar, true);
+
+										charsNode.AppendChild(newElement);
+									}
+
+									break;
+								}
+							}
+						}
+
+						mergedAccounts.Add(accountXml);
+					}
+
+					if (otherAccounts != null)
+					{
+						foreach(XmlElement otherAccountXml in otherAccounts)
+						{
+							var otherUsername = Utility.GetText(otherAccountXml["username"], "empty");
+
+							bool found = false;
+
+							foreach(XmlElement accountXml in currentAccounts)
+							{
+								var username = Utility.GetText(accountXml["username"], "empty");
+
+								if(username.Equals(otherUsername, StringComparison.OrdinalIgnoreCase))
+								{
+									found = true;
+									break;
+								}
+							}
+
+							if (!found)
+							{
+								mergedAccounts.Add(otherAccountXml);
+							}
+						}
+					}
+				}
+				else if(otherAccounts != null)
+				{
+					currentAccounts = otherAccounts;
+				}
+
+				if (!Directory.Exists(AccountDirectory))
+					Directory.CreateDirectory(AccountDirectory);
+
+				string filePath = Path.Combine(AccountDirectory, "accounts.xml");
+
+				using (StreamWriter op = new StreamWriter(filePath))
+				{
+					XmlTextWriter xml = new XmlTextWriter(op)
+					{
+						Formatting = Formatting.Indented,
+						IndentChar = '\t',
+						Indentation = 1
+					};
+
+					xml.WriteStartDocument(true);
+
+					xml.WriteStartElement("accounts");
+
+					xml.WriteAttributeString("count", mergedAccounts.Count.ToString());
+
+					mergedAccounts.ForEach(a => a.WriteTo(xml));
+
+					xml.WriteEndElement();
+
+					xml.Close();
+				}
+			}
+			catch (Exception ex)
+			{
+				e.Success = false;
+				Console.WriteLine("Warning: Account file failed to save.");
+				Diagnostics.ExceptionLogging.LogException(ex);
+			}
+		}
     }
 }

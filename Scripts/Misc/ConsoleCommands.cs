@@ -177,7 +177,34 @@ namespace Server.Misc
                 return;
             }
 
-            switch (input.Trim())
+			if(input.StartsWith("merge accounts ", StringComparison.OrdinalIgnoreCase))
+			{
+				var accountFileLocation = input.Replace("merge accounts ", string.Empty);
+				var e = new MergeAccountsEventArgs { AccountFileLocation = accountFileLocation };
+				EventSink.InvokeMergeAccountFile(e);
+
+				if (e.Success)
+				{
+					Console.WriteLine("Account Files Merged.  Restart Server(s) To Apply Changes");
+				}
+				
+				return;
+			}
+
+			if (input.StartsWith("change shard name ", StringComparison.OrdinalIgnoreCase))
+			{
+				var shardName = input.Replace("change shard name ", string.Empty);
+				var e = new ChangeCharacterShardEventArgs { OldShardName = shardName };
+				EventSink.InvokeChangeCharacterShard(e);
+
+				if (e.Success)
+				{
+					Console.WriteLine("Character's Shard Named Changed.  Restart Server(s) To Load Characters");
+				}
+				return;
+			}
+
+			switch (input.Trim())
             {
                 case "crash":
                     {
@@ -285,26 +312,36 @@ namespace Server.Misc
         {
             Console.WriteLine(" ");
             Console.WriteLine("Commands:");
-            Console.WriteLine("crash           - Forces an exception to be thrown.");
-            Console.WriteLine("save            - Performs a forced save.");
-            Console.WriteLine("shutdown        - Performs a forced save then shuts down the server.");
-            Console.WriteLine("shutdown nosave - Shuts down the server without saving.");
-            Console.WriteLine("restart         - Sends a message to players informing them that the server is");
-            Console.WriteLine("                  restarting, performs a forced save, then shuts down and");
-            Console.WriteLine("                  restarts the server.");
-            Console.WriteLine("restart nosave  - Restarts the server without saving.");
-            Console.WriteLine("online          - Shows a list of every person online:");
-            Console.WriteLine("                  Account, Char Name, IP.");
-            Console.WriteLine("bc <message>    - Type this command and your message after it.");
-            Console.WriteLine("                  It will then be sent to all players.");
-            Console.WriteLine("sc <message>    - Type this command and your message after it.");
-            Console.WriteLine("                  It will then be sent to all staff.");
-            Console.WriteLine("hear            - Copies all local speech to this console:");
-            Console.WriteLine("                  Char Name (Region name): Speech.");
-            Console.WriteLine("ban <name>      - Kicks and bans the users account.");
-            Console.WriteLine("kick <name>     - Kicks the user.");
-            Console.WriteLine("pages           - Enter page mode to handle help requests.");
-            Console.WriteLine("help|?          - Shows this list.");
+            Console.WriteLine("crash                            - Forces an exception to be thrown.");
+            Console.WriteLine("save                             - Performs a forced save.");
+			Console.WriteLine("shutdown                         - Performs a forced save then shuts down");
+			Console.WriteLine("                                   the server.");
+			Console.WriteLine("shutdown nosave                  - Shuts down the server without saving.");
+            Console.WriteLine("restart                          - Sends a message to players informing");
+			Console.WriteLine("                                   them that the server is restarting,");
+			Console.WriteLine("                                   performs a forced save, then shuts");
+            Console.WriteLine("                                   down and restarts the server.");
+            Console.WriteLine("restart nosave                   - Restarts the server without saving.");
+            Console.WriteLine("online                           - Shows a list of every person online:");
+            Console.WriteLine("                                   Account, Char Name, IP.");
+            Console.WriteLine("bc <message>                     - Type this command and your message");
+			Console.WriteLine("                                   after it. It will then be sent to ");
+			Console.WriteLine("                                   all players.");
+			Console.WriteLine("sc <message>                     - Type this command and your message");
+            Console.WriteLine("                                   after it. It will then be sent to");
+			Console.WriteLine("                                   all staff.");
+			Console.WriteLine("hear                             - Copies all local speech to this console:");
+            Console.WriteLine("                                   Char Name (Region name): Speech.");
+            Console.WriteLine("ban <name>                       - Kicks and bans the users account.");
+            Console.WriteLine("kick <name>                      - Kicks the user.");
+			Console.WriteLine("pages                            - Enter page mode to handle help requests.");
+			Console.WriteLine("merge accounts <account file>    - Moves all accounts and characters form");
+			Console.WriteLine("                                   another server's account file into this");
+			Console.WriteLine("                                   servers file");
+			Console.WriteLine("change shard name <old name>     - Changes the shard name characters");
+			Console.WriteLine("                                 - belong to from the name provided to");
+			Console.WriteLine("                                 - the current name of the shard.");
+			Console.WriteLine("help|?          - Shows this list.");
             Console.WriteLine(" ");
         }
 

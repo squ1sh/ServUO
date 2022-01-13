@@ -97,6 +97,10 @@ namespace Server
 
 	public delegate void WorldSaveEventHandler(WorldSaveEventArgs e);
 
+	public delegate void AccountFileMergeEventHandler(MergeAccountsEventArgs e);
+
+	public delegate void ChangeCharacterShardEventHandler(ChangeCharacterShardEventArgs e);
+
 	public delegate void BeforeWorldSaveEventHandler(BeforeWorldSaveEventArgs e);
 
 	public delegate void AfterWorldSaveEventHandler(AfterWorldSaveEventArgs e);
@@ -1094,6 +1098,18 @@ namespace Server
 		}
 	}
 
+	public class MergeAccountsEventArgs : EventArgs
+	{
+		public string AccountFileLocation { get; set; }
+		public bool Success { get; set; }
+	}
+
+	public class ChangeCharacterShardEventArgs : EventArgs
+	{
+		public string OldShardName { get; set; }
+		public bool Success { get; set; }
+	}
+
 	public class BeforeWorldSaveEventArgs : EventArgs
 	{
 		public BeforeWorldSaveEventArgs()
@@ -1763,6 +1779,8 @@ namespace Server
 		public static event DeleteRequestEventHandler DeleteRequest;
 		public static event WorldLoadEventHandler WorldLoad;
 		public static event WorldSaveEventHandler WorldSave;
+		public static event AccountFileMergeEventHandler MergeAccountFile;
+		public static event ChangeCharacterShardEventHandler ChangeCharacterShard;
 		public static event BeforeWorldSaveEventHandler BeforeWorldSave;
 		public static event AfterWorldSaveEventHandler AfterWorldSave;
 		public static event SetAbilityEventHandler SetAbility;
@@ -2215,6 +2233,22 @@ namespace Server
 			if (WorldSave != null)
 			{
 				WorldSave(e);
+			}
+		}
+
+		public static void InvokeMergeAccountFile(MergeAccountsEventArgs e)
+		{
+			if (MergeAccountFile != null)
+			{
+				MergeAccountFile(e);
+			}
+		}
+
+		public static void InvokeChangeCharacterShard(ChangeCharacterShardEventArgs e)
+		{
+			if(ChangeCharacterShard != null)
+			{
+				ChangeCharacterShard(e);
 			}
 		}
 
