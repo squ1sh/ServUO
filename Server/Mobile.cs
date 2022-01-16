@@ -99,7 +99,7 @@ namespace Server
 			m_Relative = relative;
 			m_Value = value;
 		}
-
+		
 		public bool ObeyCap
 		{
 			get => m_ObeyCap;
@@ -4410,6 +4410,11 @@ namespace Server
 			item.Name = oldItem.Name;
 			item.Weight = oldItem.Weight;
 
+            if (item.Stackable)
+            {
+                item.PropertyBag.Add("SkipStackCombinations", true);
+            }			
+            
 			item.Amount = oldItem.Amount - amount;
 			item.Map = oldItem.Map;
 

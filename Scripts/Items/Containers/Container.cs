@@ -220,24 +220,31 @@ namespace Server.Items
 
 			if (AllowContainerAutoSort && !(item is BaseContainer))
 			{
-				foreach (var existingItem in Items)
+				if(item.PropertyBag.ContainsKey("SkipStackCombinations") && (bool)item.PropertyBag["SkipStackCombinations"])
 				{
-					if (!(item is Container) && existingItem.StackWith(null, item, false))
+					item.PropertyBag.Remove("SkipStackCombinations");
+				}
+				else
+				{
+					foreach (var existingItem in Items)
 					{
-						return;
-					}						
-
-					if (existingItem is BaseContainer existingContainer)
-					{
-						var sortItems = existingContainer.GetAllSortItemTypesIncludingSubcontainers();
-
-						if (ItemIdentificationRulesFactory.IsItemOfSortItemTypes(item, sortItems))
+						if (!(item is Container) && existingItem.StackWith(null, item, false))
 						{
-							existingContainer.AddItem(item);
 							return;
 						}
-					}					
-				}
+
+						if (existingItem is BaseContainer existingContainer)
+						{
+							var sortItems = existingContainer.GetAllSortItemTypesIncludingSubcontainers();
+
+							if (ItemIdentificationRulesFactory.IsItemOfSortItemTypes(item, sortItems))
+							{
+								existingContainer.AddItem(item);
+								return;
+							}
+						}
+					}
+				}				
 			}
 
 			base.AddItem(item);
