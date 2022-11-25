@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
+using Server.Assets;
 #endregion
 
 namespace Server.Misc
@@ -41,15 +42,17 @@ namespace Server.Misc
 
         public static readonly string Address = Config.Get("Server.Address", default(string));
 
-        public static readonly bool AutoDetect = Config.Get("Server.AutoDetect", true);
+		public static readonly bool AutoDetect = Config.Get("Server.AutoDetect", true);
 
         public static string ServerName = Config.Get("Server.Name", "My Shard");
+
+		public static readonly AdditionalServers AdditionalServers = Config.Get("Server.AdditionalServers", "").TryParseAsJson<AdditionalServers>(out var servers) ? servers : new AdditionalServers();
 
         private static IPAddress _PublicAddress;
 
         private static readonly Regex _AddressPattern = new Regex(@"([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})");
 
-        public static void Initialize()
+		public static void Initialize()
         {
             if (Address == null)
             {
@@ -61,9 +64,11 @@ namespace Server.Misc
             else
             {
                 Resolve(Address, out _PublicAddress);
-            }
+			}
 
-            EventSink.ServerList += EventSink_ServerList;
+			Core.ServerName = ServerName;
+
+			EventSink.ServerList += EventSink_ServerList;
         }
 
         private static void EventSink_ServerList(ServerListEventArgs e)
@@ -89,6 +94,16 @@ namespace Server.Misc
                 }
 
                 e.AddServer(ServerName, new IPEndPoint(localAddress, localPort));
+
+				foreach(var server in AdditionalServers.ServerList)
+				{
+					Resolve(server.Address, out var ipAddress);
+
+					if(!string.IsNullOrWhiteSpace(server.ServerName) && ipAddress != null)
+					{
+						e.AddServer(server.ServerName, new IPEndPoint(ipAddress, server.Port));
+					}					
+				}
             }
             catch
             {
@@ -114,7 +129,7 @@ namespace Server.Misc
                 if (_PublicAddress != null)
                 {
                     Console.WriteLine("ServerList: Done: '{0}'", _PublicAddress);
-                }
+				}
                 else
                 {
                     _PublicAddress = IPAddress.Any;

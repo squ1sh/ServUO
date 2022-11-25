@@ -102,7 +102,8 @@ namespace Server.Misc
         {
             EventSink.DeleteRequest += EventSink_DeleteRequest;
             EventSink.AccountLogin += EventSink_AccountLogin;
-            EventSink.GameLogin += EventSink_GameLogin;
+			EventSink.GetAccountByUsername += EventSink_GetAccountByUsername;
+			EventSink.GameLogin += EventSink_GameLogin;
 
             if (PasswordCommandEnabled)
                 CommandSystem.Register("Password", AccessLevel.Player, Password_OnCommand);
@@ -206,7 +207,13 @@ namespace Server.Misc
             return (IPTable[ip] < MaxAccountsPerIP);
         }
 
-        public static void EventSink_AccountLogin(AccountLoginEventArgs e)
+		public static void EventSink_GetAccountByUsername(GetAccoutByUsernameEventArgs e)
+		{
+			e.Account = Accounts.GetAccount(e.Username);
+		}
+
+
+		public static void EventSink_AccountLogin(AccountLoginEventArgs e)
         {
             // If the login attempt has already been rejected by another event handler
             // then just return

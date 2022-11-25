@@ -77,6 +77,8 @@ namespace Server
 
 	public delegate void AccountLoginEventHandler(AccountLoginEventArgs e);
 
+	public delegate void GetAccoutByUsernameEventHandler(GetAccoutByUsernameEventArgs e);
+
 	public delegate void PaperdollRequestEventHandler(PaperdollRequestEventArgs e);
 
 	public delegate void ContainerSortSettingsRequestEventHandler(ContainerSortSettingsRequestEventArgs e);
@@ -94,6 +96,10 @@ namespace Server
 	public delegate void WorldLoadEventHandler();
 
 	public delegate void WorldSaveEventHandler(WorldSaveEventArgs e);
+
+	public delegate void AccountFileMergeEventHandler(MergeAccountsEventArgs e);
+
+	public delegate void ChangeCharacterShardEventHandler(ChangeCharacterShardEventArgs e);
 
 	public delegate void BeforeWorldSaveEventHandler(BeforeWorldSaveEventArgs e);
 
@@ -476,6 +482,18 @@ namespace Server
 		{
 			m_Mobile = mobile;
 			m_Container = container;
+		}
+	}
+
+	public class GetAccoutByUsernameEventArgs : EventArgs
+	{
+		private readonly string m_Username;
+		public string Username => m_Username;
+		public IAccount Account { get; set; }
+
+		public GetAccoutByUsernameEventArgs(string username)
+		{
+			m_Username = username;
 		}
 	}
 
@@ -1078,6 +1096,18 @@ namespace Server
 		{
 			m_Msg = msg;
 		}
+	}
+
+	public class MergeAccountsEventArgs : EventArgs
+	{
+		public string AccountFileLocation { get; set; }
+		public bool Success { get; set; }
+	}
+
+	public class ChangeCharacterShardEventArgs : EventArgs
+	{
+		public string OldShardName { get; set; }
+		public bool Success { get; set; }
 	}
 
 	public class BeforeWorldSaveEventArgs : EventArgs
@@ -1737,6 +1767,8 @@ namespace Server
 		public static event VirtueItemRequestEventHandler VirtueItemRequest;
 		public static event VirtueMacroRequestEventHandler VirtueMacroRequest;
 		public static event AccountLoginEventHandler AccountLogin;
+		public static event GetAccoutByUsernameEventHandler GetAccountByUsername;
+
 		public static event PaperdollRequestEventHandler PaperdollRequest;
 		public static event ContainerSortSettingsRequestEventHandler ContainerSortSettingsRequest;
 		public static event ProfileRequestEventHandler ProfileRequest;
@@ -1747,6 +1779,8 @@ namespace Server
 		public static event DeleteRequestEventHandler DeleteRequest;
 		public static event WorldLoadEventHandler WorldLoad;
 		public static event WorldSaveEventHandler WorldSave;
+		public static event AccountFileMergeEventHandler MergeAccountFile;
+		public static event ChangeCharacterShardEventHandler ChangeCharacterShard;
 		public static event BeforeWorldSaveEventHandler BeforeWorldSave;
 		public static event AfterWorldSaveEventHandler AfterWorldSave;
 		public static event SetAbilityEventHandler SetAbility;
@@ -1967,6 +2001,14 @@ namespace Server
 			if (AccountLogin != null)
 			{
 				AccountLogin(e);
+			}
+		}
+
+		public static void InvokeGetAccountByUsername(GetAccoutByUsernameEventArgs e)
+		{
+			if(GetAccountByUsername != null)
+			{
+				GetAccountByUsername(e);
 			}
 		}
 
@@ -2191,6 +2233,22 @@ namespace Server
 			if (WorldSave != null)
 			{
 				WorldSave(e);
+			}
+		}
+
+		public static void InvokeMergeAccountFile(MergeAccountsEventArgs e)
+		{
+			if (MergeAccountFile != null)
+			{
+				MergeAccountFile(e);
+			}
+		}
+
+		public static void InvokeChangeCharacterShard(ChangeCharacterShardEventArgs e)
+		{
+			if(ChangeCharacterShard != null)
+			{
+				ChangeCharacterShard(e);
 			}
 		}
 

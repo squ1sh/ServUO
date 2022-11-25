@@ -2,7 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using Server.ContextMenus;
 using Server.Diagnostics;
 using Server.Gumps;
@@ -42,6 +44,8 @@ namespace Server.Network
 
 		private static readonly EncodedPacketHandler[] m_EncodedHandlersLow;
 		private static readonly Dictionary<int, EncodedPacketHandler> m_EncodedHandlersHigh;
+
+		private static readonly Dictionary<string, RemoteServerPlayResponse> m_RemoteServerPlayResponses = new Dictionary<string, RemoteServerPlayResponse>();
 
 		static PacketHandlers()
 		{
@@ -96,6 +100,8 @@ namespace Server.Network
 			Register(0x9D, 51, true, GMSingle);
 			Register(0x9F, 0, true, VendorSellReply);
 			Register(0xA0, 3, false, PlayServer);
+			Register(0xAB, 123, false, PrepareRemoteServerPlay);
+			Register(0xAC, 37, false, RemoteServerPlayAck);
 			Register(0xA4, 149, false, SystemInfo);
 			Register(0xA7, 4, true, RequestScrollWindow);
 			Register(0xAD, 0, true, UnicodeSpeech);
@@ -2769,7 +2775,7 @@ namespace Server.Network
 		private static readonly Dictionary<uint, AuthIDPersistence> m_AuthIDWindow =
 			new Dictionary<uint, AuthIDPersistence>(m_AuthIDWindowSize);
 
-		private static uint GenerateAuthID(NetState state)
+		private static void PruneOldestAuthIdWindowSize()
 		{
 			if (m_AuthIDWindow.Count == m_AuthIDWindowSize)
 			{
@@ -2787,6 +2793,24 @@ namespace Server.Network
 
 				m_AuthIDWindow.Remove(oldestID);
 			}
+		}
+
+		public static bool AddAuthId(uint authId, ClientVersion clientVersion)
+		{
+			if(m_AuthIDWindow.ContainsKey(authId))
+			{
+				return false;
+			}
+
+			PruneOldestAuthIdWindowSize();
+			m_AuthIDWindow[authId] = new AuthIDPersistence(clientVersion);
+
+			return true;
+		}
+
+		private static uint GenerateAuthID(ClientVersion clientVersion)
+		{
+			PruneOldestAuthIdWindowSize();
 
 			uint authID;
 
@@ -2801,7 +2825,7 @@ namespace Server.Network
 			}
 			while (m_AuthIDWindow.ContainsKey(authID));
 
-			m_AuthIDWindow[authID] = new AuthIDPersistence(state.Version);
+			m_AuthIDWindow[authID] = new AuthIDPersistence(clientVersion);
 
 			return authID;
 		}
@@ -2823,6 +2847,38 @@ namespace Server.Network
 
 		public static void GameLogin(NetState state, PacketReader pvSrc)
 		{
+			var authID = pvSrc.ReadUInt32();
+
+			var username = pvSrc.ReadString(30);
+			var password = pvSrc.ReadString(30);
+
+			var e = new GameLoginEventArgs(state, username, password);
+
+			EventSink.InvokeGameLogin(e);
+
+			var playRequest = Core.MessagePump.PlayRequests.FirstOrDefault(pr => string.Equals(pr?.Account?.Username, username, StringComparison.InvariantCultureIgnoreCase) && pr.AuthId == authID);
+
+			//if the login was successful and we were expecting a login to this game server from another server then populate the needed info on state
+			if (e.Accepted && playRequest != null && PacketHandlers.AddAuthId(playRequest.AuthId, playRequest.ClientVersion))
+			{
+				state.Version = playRequest.ClientVersion;
+				//ns.Seed = playRequest.Seed;
+				//ns.Seeded = true;
+				state.SentFirstPacket = false;
+				state.Account = playRequest.Account;
+				state.AuthID = playRequest.AuthId;
+
+				var serverEventArgs = new ServerListEventArgs(state, playRequest.Account);
+
+				EventSink.InvokeServerList(serverEventArgs);
+
+				state.ServerInfo = serverEventArgs.Servers.ToArray();
+
+				playRequest.RemoteServerNetState?.Dispose();
+
+				Core.MessagePump.PlayRequests.Remove(playRequest);
+			}
+
 			if (state.SentFirstPacket)
 			{
 				state.Dispose();
@@ -2830,8 +2886,6 @@ namespace Server.Network
 			}
 
 			state.SentFirstPacket = true;
-
-			var authID = pvSrc.ReadUInt32();
 
 			if (m_AuthIDWindow.ContainsKey(authID))
 			{
@@ -2868,14 +2922,7 @@ namespace Server.Network
 
 				state.Dispose();
 				return;
-			}
-
-			var username = pvSrc.ReadString(30);
-			var password = pvSrc.ReadString(30);
-
-			var e = new GameLoginEventArgs(state, username, password);
-
-			EventSink.InvokeGameLogin(e);
+			}			
 
 			if (e.Accepted)
 			{
@@ -2894,7 +2941,7 @@ namespace Server.Network
 
 		public static void PlayServer(NetState state, PacketReader pvSrc)
 		{
-			int index = pvSrc.ReadInt16();
+			short index = pvSrc.ReadInt16();
 			var info = state.ServerInfo;
 			var a = state.Account;
 
@@ -2908,11 +2955,101 @@ namespace Server.Network
 			}
 			else
 			{
-				state.AuthID = GenerateAuthID(state);
+				var serverInfo = info[index];
 
+				state.AuthID = GenerateAuthID(state.Version);
 				state.SentFirstPacket = false;
-				state.Send(new PlayServerAck(info[index], state.AuthID));
+
+				var playServerAck = new PlayServerAck(info[index], state.AuthID);
+				var serverDetails = info.FirstOrDefault(sd => sd.Name == serverInfo.Name);
+
+				if (serverInfo.Name != Core.ServerName && serverDetails != null)
+				{
+					var socket = GetSocket(serverDetails.Address.Address, serverDetails.Address.Port);
+					var netState = new NetState(socket, Core.MessagePump);
+
+					var responseKey = Guid.NewGuid().ToString();
+					m_RemoteServerPlayResponses[responseKey] = new RemoteServerPlayResponse
+					{
+						SendingState = netState,
+						RespondingState = state,
+						PlayServerAck = playServerAck
+					};
+
+					netState.Send(new PrepareRemoteServerPlay(state, responseKey));
+					netState.Flush();
+				}
+				else
+				{
+					state.Send(playServerAck);
+				}
 			}
+		}
+
+		public static void RemoteServerPlayAck(NetState state, PacketReader pvSrc)
+		{
+			string key = pvSrc.ReadString(36);
+
+			if (m_RemoteServerPlayResponses.ContainsKey(key))
+			{
+				var responseState = m_RemoteServerPlayResponses[key];
+				responseState.RespondingState.Send(responseState.PlayServerAck);
+				responseState.SendingState.Dispose();
+			}
+		}
+
+		public static void PrepareRemoteServerPlay(NetState state, PacketReader pvSrc)
+		{
+			uint seed = pvSrc.ReadUInt32();
+			uint authId = pvSrc.ReadUInt32();
+			string username = pvSrc.ReadString(30);
+			int versionMajor = pvSrc.ReadInt32();
+			int versionMinor = pvSrc.ReadInt32();
+			int versionRevision = pvSrc.ReadInt32();
+			int versionPatch = pvSrc.ReadInt32();
+			string responseKey = pvSrc.ReadString(36);
+			string remoteServerName = pvSrc.ReadString(32);
+
+			var version = new ClientVersion(versionMajor, versionMinor, versionRevision, versionPatch);
+
+			var e = new GetAccoutByUsernameEventArgs(username);
+
+			EventSink.InvokeGetAccountByUsername(e);
+
+			if (e?.Account == null)
+			{
+				return;
+			}
+
+			var serverEventArgs = new ServerListEventArgs(state, e.Account);
+			EventSink.InvokeServerList(serverEventArgs);
+			var remoteServerInfo = serverEventArgs.Servers.FirstOrDefault(s => s.Name == remoteServerName);
+
+			NetState remoteServerNetState = null;
+
+			if(remoteServerInfo != null)
+			{
+				var socket = GetSocket(remoteServerInfo.Address.Address, remoteServerInfo.Address.Port);
+				remoteServerNetState = new NetState(socket, Core.MessagePump);
+			}
+
+			if (!Core.MessagePump.PlayRequests.Any(pr => string.Equals(pr?.Account?.Username, username, StringComparison.InvariantCultureIgnoreCase) && pr.AuthId == authId))
+			{
+				Core.MessagePump.PlayRequests.Add(new RemoteServerPlayRequest
+				{
+					ClientVersion = version,
+					Seed = seed,
+					AuthId = authId,
+					Account = e.Account,
+					RemoteServerNetState = remoteServerNetState
+				});
+			}
+
+			if(remoteServerNetState != null)
+			{
+				remoteServerNetState.Send(new RemoteServerPlayAck(responseKey));
+				remoteServerNetState.Flush();
+			}			
 		}
 
 		public static void LoginServerSeed(NetState state, PacketReader pvSrc)
@@ -3218,6 +3355,50 @@ namespace Server.Network
 			if (serial.IsItem)
 			{
 				EventSink.InvokeTargetByResourceMacro(new TargetByResourceMacroEventArgs(ns.Mobile, World.FindItem(serial), resourcetype));
+			}
+		}
+
+		public static Socket GetSocket(IPAddress address, int port)
+		{
+			IPEndPoint ipep = new IPEndPoint(address, port);
+			var s = new Socket(ipep.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+			try
+			{
+				s.Connect(ipep);
+
+				return s;
+			}
+			catch (Exception e)
+			{
+				if (e is SocketException)
+				{
+					var se = (SocketException)e;
+
+					if (se.ErrorCode == 10048)
+					{
+						// WSAEADDRINUSE
+						Utility.PushColor(ConsoleColor.Red);
+						Console.WriteLine("Listener Failed: {0}:{1} (In Use)", ipep.Address, ipep.Port);
+						Utility.PopColor();
+					}
+					else if (se.ErrorCode == 10049)
+					{
+						// WSAEADDRNOTAVAIL
+						Utility.PushColor(ConsoleColor.Red);
+						Console.WriteLine("Listener Failed: {0}:{1} (Unavailable)", ipep.Address, ipep.Port);
+						Utility.PopColor();
+					}
+					else
+					{
+						Utility.PushColor(ConsoleColor.Red);
+						Console.WriteLine("Listener Exception:");
+						Console.WriteLine(e);
+						Utility.PopColor();
+					}
+				}
+
+				return null;
 			}
 		}
 	}

@@ -3943,6 +3943,36 @@ namespace Server.Network
 		}
 	}
 
+	public sealed class RemoteServerPlayAck : Packet
+	{
+		public RemoteServerPlayAck(string responseKey)
+			: base(0xAC, 37)
+		{
+			m_Stream.WriteAsciiFixed(responseKey, 36);
+
+		}
+	}
+
+	public sealed class PrepareRemoteServerPlay : Packet
+	{
+		public PrepareRemoteServerPlay(NetState state, string responseKey)
+			: base(0xAB, 123)
+		{
+			var endpoint = (IPEndPoint)state.Socket.RemoteEndPoint;
+
+			m_Stream.Write(state.Seed);
+			m_Stream.Write(state.AuthID);
+			m_Stream.WriteAsciiFixed(state.Account?.Username ?? string.Empty, 30);
+
+			m_Stream.Write(state.Version.Major);
+			m_Stream.Write(state.Version.Minor);
+			m_Stream.Write(state.Version.Revision);
+			m_Stream.Write(state.Version.Patch);
+			m_Stream.WriteAsciiFixed(responseKey, 36);
+			m_Stream.WriteAsciiFixed(Core.ServerName, 32);
+		}
+	}
+
 	[Flags]
 	public enum PacketState
 	{
@@ -4002,7 +4032,7 @@ namespace Server.Network
 			m_Stream = PacketWriter.CreateInstance(length);// new PacketWriter( length );
 			m_Stream.Write((byte)m_PacketID);
 			m_Stream.Write((short)0);
-		}
+		} 
 
 		public PacketWriter UnderlyingStream => m_Stream;
 

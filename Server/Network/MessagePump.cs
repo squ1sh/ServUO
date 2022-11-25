@@ -1,6 +1,8 @@
 #region References
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Threading;
 
 using Server.Diagnostics;
@@ -16,11 +18,15 @@ namespace Server.Network
 
 		public Listener[] Listeners { get; set; }
 
+		public List<RemoteServerPlayRequest> PlayRequests { get; set; }
+
 		public MessagePump()
 		{
 			var ipep = Listener.EndPoints;
 
 			Listeners = new Listener[ipep.Length];
+
+			PlayRequests = new List<RemoteServerPlayRequest>();
 
 			var success = false;
 
@@ -148,6 +154,13 @@ namespace Server.Network
 		private const int BufferSize = 4096;
 		private readonly BufferPool m_Buffers = new BufferPool("Processor", 4, BufferSize);
 
+		public static bool IsRemoteServerEvent(ByteQueue buffer)
+		{
+			byte packetId = buffer.GetPacketID();
+			//if this is server to server communication it does not need a seed
+			return packetId == 0xAB || packetId == 0xAC;
+		}
+
 		public static bool HandleSeed(NetState ns, ByteQueue buffer)
 		{
 			if (buffer.GetPacketID() == 0xEF)
@@ -189,7 +202,7 @@ namespace Server.Network
 		public static bool CheckEncrypted(NetState ns, int packetID)
 		{
 			if (!ns.SentFirstPacket && packetID != 0xF0 && packetID != 0xF1 && packetID != 0xCF && packetID != 0x80 &&
-				packetID != 0x91 && packetID != 0xA4 && packetID != 0xEF && packetID != 0xE4 && packetID != 0xFF)
+				packetID != 0x91 && packetID != 0xA4 && packetID != 0xEF && packetID != 0xE4 && packetID != 0xFF && packetID != 0xAB && packetID != 0xAC)
 			{
 				Utility.PushColor(ConsoleColor.Red);
 				Console.WriteLine("Client: {0}: Encrypted Client Unsupported", ns);
@@ -214,7 +227,7 @@ namespace Server.Network
 
 			lock (buffer)
 			{
-				if (!ns.Seeded && !HandleSeed(ns, buffer))
+				if (!ns.Seeded && !IsRemoteServerEvent(buffer) && !HandleSeed(ns, buffer))
 				{
 					return;
 				}
